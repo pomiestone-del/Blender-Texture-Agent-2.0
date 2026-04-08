@@ -17,3 +17,8 @@ output_test/
 _step1.py
 _step2.py
 _step3.py
+
+# Output files (blend, glb, renders)
+*.blend
+*.glb
+*.png

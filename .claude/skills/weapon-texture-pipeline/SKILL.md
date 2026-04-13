@@ -1,77 +1,102 @@
 ---
 name: weapon-texture-pipeline
-description: Process FF7EC weapon models (OBJ/FBX) with PBR textures (AAAX/MROX/NNNX) into GLB + rendered preview PNG. Handles normal map swizzle, AO baking, and glTF-compatible material setup.
-argument-hint: <model_dir> [output_dir]
+description: Process FF7EC weapon models (OBJ/FBX) with PBR textures (AAAX/AAAT/MROX/MROE/NNNX) into GLB + rendered preview PNG. Auto-detects model structure and texture variants.
+argument-hint: <WEAPON_ID>
 ---
 
 # Weapon Model Texture Pipeline
 
-Process weapon models from `$0`, output GLB + PNG to `$1` (default: network drive output folder).
+Process all models under `\\172.16.8.156\art-data-intern\FF7EC\model\weapon\{WEAPON_ID}\model`, output GLB + PNG to `\\172.16.8.156\art-data-intern\FF7EC\output\weapon`.
+
+Change `WEAPON_ID` in `pipeline_weapon.py` to switch weapon category (001, 002, 003...).
 
 ## Input
 
-Model directory containing:
-- `body_geo.obj` or subdirectory with `.fbx` (FBX preferred if available)
+Each model subdirectory contains:
+- One or more `.obj` files, or a `skin_*` subdirectory with `.fbx` (FBX preferred for bone data)
 - `materials/` with PBR textures:
-  - `tex_*_AAAX.png` — Albedo (sRGB)
-  - `tex_*_MROX.png` — R=Metallic, G=Roughness, B=Occlusion (sRGB)
-  - `tex_*_NNNX.png` — Normal map (pink, non-standard channels)
-- Optional: `ditherTexture_int.png`, `tex_pb_chara_int.png` (engine-specific, ignore)
+  - `tex_weXXX_YYY_AAAX.png` or `_AAAT.png` — Albedo (AAAT has alpha transparency)
+  - `tex_weXXX_YYY_MROX.png` or `_MROE.png` — R=Metallic, G=Roughness, B=Occlusion (MROE has A=Emissive)
+  - `tex_weXXX_YYY_NNNX.png` — Normal map (pink, non-standard channels)
+- Optional (ignored): `ditherTexture_int.png`, `tex_pb_chara_int.png`, `*_ramp.png`
+
+## Auto-Detection
+
+Script auto-detects per model:
+- **Import method**: FBX (with custom normals + automatic bone orientation) or OBJ (all .obj files imported)
+- **Base texture**: AAAT (alpha connected to Principled BSDF Alpha) or AAAX (standard)
+- **MR texture**: MROE (Emission Strength set to 0, data near-zero) or MROX (standard)
 
 ## Pipeline (3 steps)
 
 ### Step 1: Texture Processing (Python PIL/numpy)
 
-**Normal map** (pink → purple):
-- Original: R=Z(~255), G=X(~128), B=Y(~128) — non-standard channel layout
-- Sample Blender wiring: Separate Color → R→Z, G→X, B→Y via Combine XYZ → Normal Map
-- Bake swizzle into pixels: `newR=oldG(X), newG=oldB(Y), newB=oldR(Z)` → standard purple (B dominant)
-- Save as `*_NNNX_fixed.png`
+Only the normal map needs conversion:
+- Original pink: R=Z(~255), G=X(~128), B=Y(~128) — non-standard channel layout
+- Swizzle: `newR=oldG(X), newG=oldB(Y), newB=oldR(Z)` → standard purple (B dominant)
+- Saved as `*_NNNX_fixed.png` alongside original
 
-**MROX**: No conversion needed. glTF exporter auto-handles channel remapping and sRGB→Linear when it sees `Separate Color → R→Metallic, G→Roughness` connected to Principled BSDF.
-
-**AO**: Dropped. Not baked into BaseColor, not exported as occlusionTexture. Keeps output brighter and simpler.
+**No other texture conversion needed:**
+- MROX/MROE: glTF exporter auto-handles channel remapping and sRGB→Linear when it sees `Separate Color → R→Metallic, G→Roughness`
+- AAAX/AAAT: used directly as Base Color (no AO baking)
 
 ### Step 2: GLB Export (Blender 4.5)
 
-Material node setup matching sample wiring:
-- `AAAX.png` (sRGB) → Base Color (direct, no AO)
-- `MROX.png` (sRGB) → Separate Color → Red→Metallic, Green→Roughness
-- `NNNX_fixed.png` (Non-Color) → Normal Map → Normal
+Material node setup:
+- `AAAX/AAAT` (sRGB) → Base Color (+ Alpha if AAAT)
+- `MROX/MROE` (sRGB) → Separate Color → Red→Metallic, Green→Roughness
+- `NNNX_fixed` (Non-Color) → Normal Map → Normal
 
-glTF exporter auto-handles:
-- MROX channel repack (R=Metallic,G=Roughness → glTF B=Metallic,G=Roughness)
-- sRGB→Linear conversion for metallicRoughness texture
+Export to local temp, then copy to network drive (Blender UNC path output unreliable).
 
 ### Step 3: Render (Blender 4.5 + blender_render_preview.py)
 
-Uses official `blender_render_preview.py` render script:
+Official render script from `C:\Users\Administrator\Downloads\blender_render_preview.py`:
 - Cycles GPU, 64 samples, max_bounces=2
 - Camera: rotation (1.047, 0, -0.707), auto-fit to model
 - Sun light: energy=2, angle=0.942
-- World: gray (0.5, 0.5, 0.5)
-- Transparent background, 512×512 PNG
+- World: gray (0.5, 0.5, 0.5), transparent background
+- 512×512 RGBA PNG
+
+Render to local temp, then copy to network drive.
 
 ## Output
 
-Network drive `\\172.16.8.156\art-data-intern\FF7EC\output\weapon\`:
+`\\172.16.8.156\art-data-intern\FF7EC\output\weapon\`:
 ```
-we001_001.glb + we001_001.png
-we001_002.glb + we001_002.png
+weXXX_001.glb + weXXX_001.png
+weXXX_002.glb + weXXX_002.png
 ...
+```
+
+## Usage
+
+```bash
+# Edit WEAPON_ID in pipeline_weapon.py, then:
+python pipeline_weapon.py
 ```
 
 ## Key Decisions
 
-1. **No ORM conversion**: glTF exporter recognizes Separate Color → Metallic/Roughness pattern and auto-converts
-2. **No AO**: dropped entirely — keeps output clean and avoids color space issues with baking
-3. **Normal swizzle baked**: eliminates Separate Color + Combine XYZ nodes; direct connection to Normal Map node
-4. **Blender 4.5**: better compatibility with official render script than 5.1
-5. **Official render script**: `blender_render_preview.py` — same as public render API, consistent results
+1. **No ORM conversion**: glTF exporter recognizes `Separate Color → Metallic/Roughness` and auto-converts
+2. **No AO baking**: AAAX used directly as Base Color, keeps output clean
+3. **Normal swizzle baked**: pink→purple, eliminates Separate Color + Combine XYZ nodes
+4. **Blender 4.5**: official render script compatible (5.1 has World node issues)
+5. **Local-then-copy**: all Blender output written locally first, then copied to network drive
+6. **Multi-OBJ support**: all .obj files in a model directory are imported together
+7. **FBX priority**: preserves skeleton + custom normals via `use_custom_normals=True, automatic_bone_orientation=True`
+
+## Known Variants
+
+| Type | Handling |
+|------|----------|
+| AAAX | Standard albedo, direct to Base Color |
+| AAAT | Albedo with alpha, Alpha→Principled BSDF Alpha |
+| MROX | Standard M/R/O, R→Metallic G→Roughness |
+| MROE | M/R/O/Emissive, Emission Strength=0 (A channel data near-zero) |
+| Multi-OBJ | All imported, share one material |
+| FBX | Bones + custom normals preserved |
 
 ## Script
 
-`pipeline_weapon.py` — single script handles everything:
-```bash
-python pipeline_weapon.py
-```
+`pipeline_weapon.py` — single file, handles everything.

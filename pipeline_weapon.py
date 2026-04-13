@@ -14,7 +14,8 @@ from PIL import Image
 BLENDER = r"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"
 RENDER_SCRIPT = r"C:\Users\Administrator\Downloads\blender_render_preview.py"
 
-BASE_DIR = r"\\172.16.8.156\art-data-intern\FF7EC\model\weapon\001\model"
+WEAPON_ID = "002"  # Change this to process different weapon categories
+BASE_DIR = rf"\\172.16.8.156\art-data-intern\FF7EC\model\weapon\{WEAPON_ID}\model"
 OUTPUT_UNC = r"\\172.16.8.156\art-data-intern\FF7EC\output\weapon"
 LOCAL_TMP = r"C:\Users\Administrator\Documents\outputTest"
 
@@ -25,7 +26,7 @@ LOCAL_TMP = r"C:\Users\Administrator\Documents\outputTest"
 def detect_model(mid):
     """Detect import method and texture types for a model."""
     model_dir = os.path.join(BASE_DIR, mid)
-    prefix = f"we001_{mid}"
+    prefix = f"we{WEAPON_ID}_{mid}"
 
     # Detect FBX
     fbx_path = None
@@ -225,15 +226,19 @@ def export_glb(cfg):
 def render_glb(cfg):
     prefix = cfg["prefix"]
     glb_path = os.path.join(OUTPUT_UNC, f"{prefix}.glb")
-    png_path = os.path.join(OUTPUT_UNC, f"{prefix}.png")
+    local_png = os.path.join(LOCAL_TMP, f"{prefix}.png")
+    remote_png = os.path.join(OUTPUT_UNC, f"{prefix}.png")
 
+    # Render to local first, then copy (UNC paths unreliable for Blender output)
+    import shutil
     result = subprocess.run(
         [BLENDER, "--background", "--python", RENDER_SCRIPT,
-         "--", glb_path, png_path, "512"],
+         "--", glb_path, local_png, "512"],
         capture_output=True, text=True, timeout=180,
         encoding="utf-8", errors="replace"
     )
-    if os.path.isfile(png_path):
+    if os.path.isfile(local_png):
+        shutil.copy2(local_png, remote_png)
         print(f"[{cfg['mid']}] Rendered")
     else:
         print(f"[{cfg['mid']}] Render FAILED")

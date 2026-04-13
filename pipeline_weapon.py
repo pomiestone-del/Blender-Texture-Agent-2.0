@@ -14,10 +14,9 @@ from PIL import Image
 BLENDER = r"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"
 RENDER_SCRIPT = r"C:\Users\Administrator\Downloads\blender_render_preview.py"
 
-WEAPON_ID = "002"  # Change this to process different weapon categories
+WEAPON_ID = "003"  # Change this to process different weapon categories
 BASE_DIR = rf"\\172.16.8.156\art-data-intern\FF7EC\model\weapon\{WEAPON_ID}\model"
 OUTPUT_UNC = r"\\172.16.8.156\art-data-intern\FF7EC\output\weapon"
-LOCAL_TMP = r"C:\Users\Administrator\Documents\outputTest"
 
 
 # ============================================================
@@ -96,7 +95,6 @@ def generate_blender_script(cfg):
     mid = cfg["mid"]
     prefix = cfg["prefix"]
     tex_dir = cfg["tex_dir"]
-    local_glb = os.path.join(LOCAL_TMP, f"{prefix}.glb")
     remote_glb = os.path.join(OUTPUT_UNC, f"{prefix}.glb")
 
     base_tex = f"tex_{prefix}_{cfg['base_type']}.png"
@@ -130,7 +128,7 @@ mat.use_backface_culling = False
 bsdf.inputs["Emission Strength"].default_value = 0.0
 """
 
-    script = f'''import bpy, os, shutil
+    script = f'''import bpy, os
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
 # Import
@@ -189,12 +187,8 @@ for obj in bpy.data.objects:
         else:
             obj.data.materials.append(mat)
 
-# Export
-local = r"{local_glb}"
-bpy.ops.export_scene.gltf(filepath=local, export_format="GLB", export_texcoords=True, export_normals=True, export_materials="EXPORT", export_image_format="AUTO")
-
-remote = r"{remote_glb}"
-shutil.copy2(local, remote)
+# Export directly to network drive
+bpy.ops.export_scene.gltf(filepath=r"{remote_glb}", export_format="GLB", export_texcoords=True, export_normals=True, export_materials="EXPORT", export_image_format="AUTO")
 print("GLB exported: {prefix}.glb")
 '''
     return script
@@ -202,7 +196,8 @@ print("GLB exported: {prefix}.glb")
 
 def export_glb(cfg):
     mid = cfg["mid"]
-    script_path = os.path.join(LOCAL_TMP, f"_export_{mid}.py")
+    import tempfile
+    script_path = os.path.join(tempfile.gettempdir(), f"_export_{mid}.py")
 
     with open(script_path, "w", encoding="utf-8") as f:
         f.write(generate_blender_script(cfg))
@@ -226,19 +221,15 @@ def export_glb(cfg):
 def render_glb(cfg):
     prefix = cfg["prefix"]
     glb_path = os.path.join(OUTPUT_UNC, f"{prefix}.glb")
-    local_png = os.path.join(LOCAL_TMP, f"{prefix}.png")
-    remote_png = os.path.join(OUTPUT_UNC, f"{prefix}.png")
+    png_path = os.path.join(OUTPUT_UNC, f"{prefix}.png")
 
-    # Render to local first, then copy (UNC paths unreliable for Blender output)
-    import shutil
     result = subprocess.run(
         [BLENDER, "--background", "--python", RENDER_SCRIPT,
-         "--", glb_path, local_png, "512"],
+         "--", glb_path, png_path, "512"],
         capture_output=True, text=True, timeout=180,
         encoding="utf-8", errors="replace"
     )
-    if os.path.isfile(local_png):
-        shutil.copy2(local_png, remote_png)
+    if os.path.isfile(png_path):
         print(f"[{cfg['mid']}] Rendered")
     else:
         print(f"[{cfg['mid']}] Render FAILED")

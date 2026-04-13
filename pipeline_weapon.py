@@ -38,11 +38,11 @@ def detect_model(mid):
                     fbx_path = os.path.join(skin_dir, f)
                     fbx_tex_dir = skin_dir
 
-    # Detect OBJ
-    obj_path = None
-    for f in os.listdir(model_dir):
+    # Detect OBJ (collect all)
+    obj_paths = []
+    for f in sorted(os.listdir(model_dir)):
         if f.endswith(".obj"):
-            obj_path = os.path.join(model_dir, f)
+            obj_paths.append(os.path.join(model_dir, f))
 
     # Texture directory (FBX dir has its own textures, fallback to materials/)
     mat_dir = os.path.join(model_dir, "materials")
@@ -64,7 +64,7 @@ def detect_model(mid):
         "model_dir": model_dir,
         "tex_dir": tex_dir,
         "import": "FBX" if fbx_path else "OBJ",
-        "import_path": fbx_path or obj_path,
+        "import_path": fbx_path if fbx_path else obj_paths,
         "base_type": base_type,  # AAAX or AAAT
         "mr_type": mr_type,      # MROX or MROE
         "has_alpha": has_aaat,
@@ -106,7 +106,9 @@ def generate_blender_script(cfg):
     if cfg["import"] == "FBX":
         import_cmd = f'bpy.ops.import_scene.fbx(filepath=r"{cfg["import_path"]}", use_custom_normals=True, automatic_bone_orientation=True)'
     else:
-        import_cmd = f'bpy.ops.wm.obj_import(filepath=r"{cfg["import_path"]}")'
+        # Import all OBJs
+        import_lines = [f'bpy.ops.wm.obj_import(filepath=r"{p}")' for p in cfg["import_path"]]
+        import_cmd = "\n".join(import_lines)
 
     # Alpha setup
     alpha_nodes = ""

@@ -47,7 +47,7 @@ Material node setup:
 - `MROX/MROE` (sRGB) → Separate Color → Red→Metallic, Green→Roughness
 - `NNNX_fixed` (Non-Color) → Normal Map → Normal
 
-Export to local temp, then copy to network drive (Blender UNC path output unreliable).
+Export directly to network drive.
 
 ### Step 3: Render (Blender 4.5 + blender_render_preview.py)
 
@@ -58,7 +58,7 @@ Official render script from `C:\Users\Administrator\Downloads\blender_render_pre
 - World: gray (0.5, 0.5, 0.5), transparent background
 - 512×512 RGBA PNG
 
-Render to local temp, then copy to network drive.
+Render directly to network drive.
 
 ## Output
 
@@ -71,6 +71,19 @@ weXXX_002.glb + weXXX_002.png
 
 ## Usage
 
+**必须按顺序执行，先扫描再处理：**
+
+### Step 0: 扫描文件结构（每次处理新文件夹前必须执行）
+
+在执行 pipeline 之前，先扫描目标文件夹的所有模型目录，检查：
+1. 每个模型的文件结构（OBJ/FBX、贴图类型、多 OBJ 等）
+2. 是否有未见过的文件类型或缺失的必需贴图
+3. 汇总异常情况，报告给用户确认后再执行
+
+如果发现新的贴图类型或异常文件结构，**必须先告知用户并给出分析和解决方案**，得到确认后才能执行处理。
+
+### Step 1-3: 执行 pipeline
+
 ```bash
 # Edit WEAPON_ID in pipeline_weapon.py, then:
 python pipeline_weapon.py
@@ -82,7 +95,7 @@ python pipeline_weapon.py
 2. **No AO baking**: AAAX used directly as Base Color, keeps output clean
 3. **Normal swizzle baked**: pink→purple, eliminates Separate Color + Combine XYZ nodes
 4. **Blender 4.5**: official render script compatible (5.1 has World node issues)
-5. **Local-then-copy**: all Blender output written locally first, then copied to network drive
+5. **Direct network write**: GLB and PNG written directly to network drive
 6. **Multi-OBJ support**: all .obj files in a model directory are imported together
 7. **FBX priority**: preserves skeleton + custom normals via `use_custom_normals=True, automatic_bone_orientation=True`
 

@@ -63,6 +63,7 @@ def detect_model(mid):
         "prefix": prefix,
         "model_dir": model_dir,
         "tex_dir": tex_dir,
+        "weapon_id": WEAPON_ID,
         "import": "FBX" if fbx_path else "OBJ",
         "import_path": fbx_path if fbx_path else obj_paths,
         "base_type": base_type,  # AAAX or AAAT
@@ -94,8 +95,8 @@ def generate_blender_script(cfg):
     """Generate a Blender Python script for GLB export."""
     mid = cfg["mid"]
     prefix = cfg["prefix"]
-    tex_dir = cfg["tex_dir"]
-    remote_glb = os.path.join(OUTPUT_UNC, f"{prefix}.glb")
+    tex_dir = os.path.normpath(cfg["tex_dir"])
+    remote_glb = os.path.normpath(os.path.join(OUTPUT_UNC, f"{prefix}.glb"))
 
     base_tex = f"tex_{prefix}_{cfg['base_type']}.png"
     mr_tex = f"tex_{prefix}_{cfg['mr_type']}.png"
@@ -103,10 +104,11 @@ def generate_blender_script(cfg):
 
     # Import command
     if cfg["import"] == "FBX":
-        import_cmd = f'bpy.ops.import_scene.fbx(filepath=r"{cfg["import_path"]}", use_custom_normals=True, automatic_bone_orientation=True)'
+        fbx_norm = os.path.normpath(cfg["import_path"])
+        import_cmd = f'bpy.ops.import_scene.fbx(filepath=r"{fbx_norm}", use_custom_normals=True, automatic_bone_orientation=True)'
     else:
         # Import all OBJs
-        import_lines = [f'bpy.ops.wm.obj_import(filepath=r"{p}")' for p in cfg["import_path"]]
+        import_lines = [f'bpy.ops.wm.obj_import(filepath=r"{os.path.normpath(p)}")' for p in cfg["import_path"]]
         import_cmd = "\n".join(import_lines)
 
     # Alpha setup
@@ -128,11 +130,29 @@ mat.use_backface_culling = False
 bsdf.inputs["Emission Strength"].default_value = 0.0
 """
 
+    # Rotation for 001, 004, 005: X -90° then Z -90°
+    rotate_cmd = ""
+    if cfg["weapon_id"] in ("001", "004", "005"):
+        rotate_cmd = """
+import math, mathutils
+rot_x = mathutils.Matrix.Rotation(math.radians(-90), 4, 'X')
+rot_z = mathutils.Matrix.Rotation(math.radians(-90), 4, 'Z')
+combined = rot_z @ rot_x
+for obj in bpy.data.objects:
+    if obj.parent is None:
+        obj.matrix_world = combined @ obj.matrix_world
+bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+"""
+
     script = f'''import bpy, os
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
 # Import
 {import_cmd}
+
+# Rotation fix
+{rotate_cmd}
 
 # Create material
 mat = bpy.data.materials.new(name="mat_{prefix}")
@@ -183,7 +203,8 @@ links.new(n_nmap.outputs["Normal"], bsdf.inputs["Normal"])
 for obj in bpy.data.objects:
     if obj.type == "MESH":
         if obj.data.materials:
-            obj.data.materials[0] = mat
+            for i in range(len(obj.data.materials)):
+                obj.data.materials[i] = mat
         else:
             obj.data.materials.append(mat)
 
@@ -220,8 +241,8 @@ def export_glb(cfg):
 # ============================================================
 def render_glb(cfg):
     prefix = cfg["prefix"]
-    glb_path = os.path.join(OUTPUT_UNC, f"{prefix}.glb")
-    png_path = os.path.join(OUTPUT_UNC, f"{prefix}.png")
+    glb_path = os.path.normpath(os.path.join(OUTPUT_UNC, f"{prefix}.glb"))
+    png_path = os.path.normpath(os.path.join(OUTPUT_UNC, f"{prefix}.png"))
 
     result = subprocess.run(
         [BLENDER, "--background", "--python", RENDER_SCRIPT,

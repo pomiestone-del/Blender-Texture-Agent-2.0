@@ -3,7 +3,6 @@ Weapon pipeline: texture processing + GLB export + local Blender render
 Usage: python pipeline_weapon.py
 """
 import os
-import sys
 import subprocess
 import shutil
 import numpy as np
@@ -12,8 +11,8 @@ from PIL import Image
 # ============================================================
 # Config
 # ============================================================
-BLENDER = r"C:\Program Files\Blender Foundation\Blender 5.1\blender.exe"
-RENDER_SCRIPT = r"C:\Users\Administrator\Documents\sample\render_glb.py"
+BLENDER = r"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"
+RENDER_SCRIPT = r"C:\Users\Administrator\Downloads\blender_render_preview.py"
 
 BASE_DIR = r"\\172.16.8.156\art-data-intern\FF7EC\model\weapon\001\model"
 OUTPUT_UNC = r"\\172.16.8.156\art-data-intern\FF7EC\output\weapon"
@@ -24,35 +23,17 @@ MODELS = ["001", "002", "003"]
 # ============================================================
 # Step 1: Texture processing
 # ============================================================
-def srgb_to_linear(c):
-    return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
-
-def linear_to_srgb(c):
-    return np.where(c <= 0.0031308, c * 12.92, 1.055 * np.power(np.clip(c, 0, None), 1.0/2.4) - 0.055)
-
 def process_textures(mid):
     prefix = f"we001_{mid}"
     tex_dir = os.path.join(BASE_DIR, mid, "materials")
 
-    # Normal map swizzle bake (pink -> blue/purple)
+    # Normal map: bake channel swizzle into pixels (pink -> purple)
+    # Original pink (R=Z~255, G=X~128, B=Y~128), sample wiring: R→Z, G→X, B→Y via Combine XYZ
+    # Standard normal map: R=X, G=Y, B=Z → newR=oldG, newG=oldB, newB=oldR
     nnnx = np.array(Image.open(os.path.join(tex_dir, f"tex_{prefix}_NNNX.png")))
     r, g, b = nnnx[:,:,0].copy(), nnnx[:,:,1].copy(), nnnx[:,:,2].copy()
     nnnx[:,:,0], nnnx[:,:,1], nnnx[:,:,2] = g, b, r
     Image.fromarray(nnnx).save(os.path.join(tex_dir, f"tex_{prefix}_NNNX_fixed.png"))
-
-    # MROX -> ORM (linearized, R<->B swap)
-    mrox = np.array(Image.open(os.path.join(tex_dir, f"tex_{prefix}_MROX.png"))).astype(np.float64) / 255.0
-    rm, gm, bm = srgb_to_linear(mrox[:,:,0]), srgb_to_linear(mrox[:,:,1]), srgb_to_linear(mrox[:,:,2])
-    orm = np.clip(np.stack([bm, gm, rm], axis=2) * 255.0, 0, 255).astype(np.uint8)
-    Image.fromarray(orm).save(os.path.join(tex_dir, f"tex_{prefix}_ORM.png"))
-
-    # BaseColor = AAAX * AO (baked in linear, stored as sRGB)
-    aaax = np.array(Image.open(os.path.join(tex_dir, f"tex_{prefix}_AAAX.png"))).astype(np.float64) / 255.0
-    ao = srgb_to_linear(mrox[:,:,2])  # AO = MROX Blue
-    aaax_linear = srgb_to_linear(aaax[:,:,:3])
-    baked = aaax_linear * ao[:,:,np.newaxis]
-    baked_srgb = np.clip(linear_to_srgb(baked) * 255.0, 0, 255).astype(np.uint8)
-    Image.fromarray(baked_srgb).save(os.path.join(tex_dir, f"tex_{prefix}_BaseColor.png"))
 
     print(f"[{mid}] Textures processed")
 
@@ -92,13 +73,13 @@ links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
 
 n_bc = nodes.new("ShaderNodeTexImage")
 n_bc.location = (-600, 300)
-n_bc.image = bpy.data.images.load(r"{os.path.join(tex_dir, f"tex_{prefix}_BaseColor.png")}")
+n_bc.image = bpy.data.images.load(r"{os.path.join(tex_dir, f"tex_{prefix}_AAAX.png")}")
 n_bc.image.colorspace_settings.name = "sRGB"
 
-n_orm = nodes.new("ShaderNodeTexImage")
-n_orm.location = (-600, -100)
-n_orm.image = bpy.data.images.load(r"{os.path.join(tex_dir, f"tex_{prefix}_ORM.png")}")
-n_orm.image.colorspace_settings.name = "Non-Color"
+n_mrox = nodes.new("ShaderNodeTexImage")
+n_mrox.location = (-600, -100)
+n_mrox.image = bpy.data.images.load(r"{os.path.join(tex_dir, f"tex_{prefix}_MROX.png")}")
+n_mrox.image.colorspace_settings.name = "sRGB"
 
 n_sep = nodes.new("ShaderNodeSeparateColor")
 n_sep.location = (-300, -100)
@@ -112,8 +93,8 @@ n_nmap = nodes.new("ShaderNodeNormalMap")
 n_nmap.location = (-300, -500)
 
 links.new(n_bc.outputs["Color"], bsdf.inputs["Base Color"])
-links.new(n_orm.outputs["Color"], n_sep.inputs["Color"])
-links.new(n_sep.outputs["Blue"], bsdf.inputs["Metallic"])
+links.new(n_mrox.outputs["Color"], n_sep.inputs["Color"])
+links.new(n_sep.outputs["Red"], bsdf.inputs["Metallic"])
 links.new(n_sep.outputs["Green"], bsdf.inputs["Roughness"])
 links.new(n_nnn.outputs["Color"], n_nmap.inputs["Color"])
 links.new(n_nmap.outputs["Normal"], bsdf.inputs["Normal"])

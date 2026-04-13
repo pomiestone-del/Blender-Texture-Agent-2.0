@@ -54,9 +54,10 @@ def detect_model(mid):
     has_aaax = any(f"tex_{prefix}_AAAX" in f for f in tex_files)
     has_mroe = any(f"tex_{prefix}_MROE" in f for f in tex_files)
     has_mrox = any(f"tex_{prefix}_MROX" in f for f in tex_files)
+    has_morx = any(f"tex_{prefix}_MORX" in f for f in tex_files)
 
     base_type = "AAAT" if has_aaat else "AAAX"
-    mr_type = "MROE" if has_mroe else "MROX"
+    mr_type = "MROE" if has_mroe else ("MROX" if has_mrox else "MORX")
 
     return {
         "mid": mid,

@@ -273,19 +273,63 @@ def _make_mat(name, base_path, mr_path, normal_path, has_alpha, has_emissive):
 
         material_cmd = "\n".join(mat_lines)
 
-        # Assignment: match part name in mesh name
+        # Assignment: fuzzy match part name to mesh name
         assign_lines = ["_part_mats = {"]
         for part, var in mat_names.items():
             assign_lines.append(f'    "{part}": {var},')
         assign_lines.append("}")
         assign_lines.append("""
+import re as _re2
+
+def _normalize(s):
+    return _re2.sub(r'[_\\s]', '', s).lower()
+
+def _match_part_to_mesh(part_key, mesh_name):
+    if not part_key:
+        return False
+    pk = _normalize(part_key)
+    mn = _normalize(mesh_name)
+    # Exact substring
+    if pk in mn:
+        return True
+    # Mesh name prefix in part key (add_geo -> addbody)
+    mesh_base = _re2.sub(r'(geo|bf|backface|lod\\d+|\\d+)$', '', mn).strip('_')
+    mesh_base = _normalize(mesh_base)
+    if mesh_base and mesh_base in pk:
+        return True
+    if mesh_base and pk.startswith(mesh_base):
+        return True
+    # Part key prefix in mesh base (bodyA -> body_a_geo)
+    if len(pk) >= 3 and pk in mesh_base:
+        return True
+    return False
+
+def _best_match(obj_name, part_mats):
+    mn = _normalize(obj_name)
+    mesh_base = _re2.sub(r'(geo|bf|backface|lod\\d+|\\d+)$', '', mn).strip('_')
+    mesh_base = _normalize(mesh_base) if mesh_base else mn
+    best = None
+    best_score = 999
+    for pk, pm in part_mats.items():
+        if _match_part_to_mesh(pk, obj_name):
+            # Lower score = tighter match (smaller length difference)
+            score = abs(len(_normalize(pk)) - len(mesh_base))
+            if score < best_score:
+                best_score = score
+                best = pm
+    return best
+
 for obj in bpy.data.objects:
     if obj.type == "MESH":
-        assigned = None
-        for part_key, part_mat in _part_mats.items():
-            if part_key and part_key in obj.name:
-                assigned = part_mat
-                break
+        # Try matching mesh name
+        assigned = _best_match(obj.name, _part_mats)
+        # Also try matching original material slot names
+        if assigned is None:
+            for slot in obj.data.materials:
+                if slot:
+                    assigned = _best_match(slot.name, _part_mats)
+                    if assigned:
+                        break
         if assigned is None:
             assigned = list(_part_mats.values())[0]
         if obj.data.materials:

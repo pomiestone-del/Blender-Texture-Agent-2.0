@@ -442,6 +442,21 @@ for obj in bpy.data.objects:
 # Rotation fix
 {rotate_cmd}
 
+# Remove duplicate overlapping meshes (e.g. body_01/body_02/body_03 with same vert count)
+import re as _re
+_mesh_groups = {{}}
+for obj in list(bpy.data.objects):
+    if obj.type == "MESH":
+        base_name = _re.sub(r'_?\\d{{2,3}}(_)', r'\\1', obj.name, count=1)
+        key = (base_name, len(obj.data.vertices))
+        if key not in _mesh_groups:
+            _mesh_groups[key] = []
+        _mesh_groups[key].append(obj)
+for key, objs in _mesh_groups.items():
+    if len(objs) > 1:
+        for dup in objs[1:]:
+            bpy.data.objects.remove(dup, do_unlink=True)
+
 # Create materials
 {material_cmd}
 

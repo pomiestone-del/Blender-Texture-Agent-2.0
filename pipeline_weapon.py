@@ -208,23 +208,27 @@ def _make_mat(name, base_path, mr_path, normal_path, has_alpha, has_emissive):
     out = nodes.new("ShaderNodeOutputMaterial"); out.location=(200,100)
     bsdf = nodes.new("ShaderNodeBsdfPrincipled"); bsdf.location=(-200,100)
     links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
-    n_base = nodes.new("ShaderNodeTexImage"); n_base.location=(-600,300)
-    n_base.image = bpy.data.images.load(base_path)
-    n_base.image.colorspace_settings.name = "sRGB"
-    links.new(n_base.outputs["Color"], bsdf.inputs["Base Color"])
-    if has_alpha:
-        links.new(n_base.outputs["Alpha"], bsdf.inputs["Alpha"])
-        mat.surface_render_method = 'DITHERED'
-        mat.use_backface_culling = False
-    n_mr = nodes.new("ShaderNodeTexImage"); n_mr.location=(-600,-100)
-    n_mr.image = bpy.data.images.load(mr_path)
-    n_mr.image.colorspace_settings.name = "sRGB"
-    n_sep = nodes.new("ShaderNodeSeparateColor"); n_sep.location=(-300,-100)
-    links.new(n_mr.outputs["Color"], n_sep.inputs["Color"])
-    links.new(n_sep.outputs["Red"], bsdf.inputs["Metallic"])
-    links.new(n_sep.outputs["Green"], bsdf.inputs["Roughness"])
-    if has_emissive:
-        bsdf.inputs["Emission Strength"].default_value = 0.0
+    if base_path and os.path.isfile(base_path):
+        n_base = nodes.new("ShaderNodeTexImage"); n_base.location=(-600,300)
+        n_base.image = bpy.data.images.load(base_path)
+        n_base.image.colorspace_settings.name = "sRGB"
+        links.new(n_base.outputs["Color"], bsdf.inputs["Base Color"])
+        if has_alpha:
+            links.new(n_base.outputs["Alpha"], bsdf.inputs["Alpha"])
+            mat.surface_render_method = 'DITHERED'
+            mat.use_backface_culling = False
+    else:
+        bsdf.inputs["Base Color"].default_value = (0.8, 0.8, 0.8, 1.0)
+    if mr_path and os.path.isfile(mr_path):
+        n_mr = nodes.new("ShaderNodeTexImage"); n_mr.location=(-600,-100)
+        n_mr.image = bpy.data.images.load(mr_path)
+        n_mr.image.colorspace_settings.name = "sRGB"
+        n_sep = nodes.new("ShaderNodeSeparateColor"); n_sep.location=(-300,-100)
+        links.new(n_mr.outputs["Color"], n_sep.inputs["Color"])
+        links.new(n_sep.outputs["Red"], bsdf.inputs["Metallic"])
+        links.new(n_sep.outputs["Green"], bsdf.inputs["Roughness"])
+        if has_emissive:
+            bsdf.inputs["Emission Strength"].default_value = 0.0
     if normal_path and os.path.isfile(normal_path):
         n_nnn = nodes.new("ShaderNodeTexImage"); n_nnn.location=(-600,-500)
         n_nnn.image = bpy.data.images.load(normal_path)
@@ -243,9 +247,22 @@ def _make_mat(name, base_path, mr_path, normal_path, has_alpha, has_emissive):
             b_tex = os.path.join(tex_dir, f"{tp}{prefix}{part_suffix}_{p['base_type']}.png")
             m_tex = os.path.join(tex_dir, f"{tp}{prefix}{part_suffix}_{p['mr_type']}.png")
             n_tex = os.path.join(tex_dir, f"{tp}{prefix}{part_suffix}_NNNX_fixed.png")
+            # Fallback to materials dir for base/MR/NNNX
+            mat_dir = os.path.normpath(os.path.join(cfg["model_dir"], "materials"))
+            if not os.path.isfile(b_tex):
+                b_alt = os.path.join(mat_dir, f"{tp}{prefix}{part_suffix}_{p['base_type']}.png")
+                if os.path.isfile(b_alt):
+                    b_tex = b_alt
+                else:
+                    b_tex = ""
+            if not os.path.isfile(m_tex):
+                m_alt = os.path.join(mat_dir, f"{tp}{prefix}{part_suffix}_{p['mr_type']}.png")
+                if os.path.isfile(m_alt):
+                    m_tex = m_alt
+                else:
+                    m_tex = ""
             # Fallback to materials dir for NNNX
             if not os.path.isfile(n_tex):
-                mat_dir = os.path.join(cfg["model_dir"], "materials")
                 n_tex_alt = os.path.join(mat_dir, f"{tp}{prefix}{part_suffix}_NNNX_fixed.png")
                 if os.path.isfile(n_tex_alt):
                     n_tex = n_tex_alt

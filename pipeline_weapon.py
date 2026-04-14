@@ -142,6 +142,7 @@ bsdf.inputs["Emission Strength"].default_value = 0.0
         "007": [('Z', -90)],
         "008": [('Y', 90), ('X', 90)],
         "009": [('X', -90), ('Z', -90)],
+        "012": [('X', -90), ('Z', -90)],
         "020": [('X', -90), ('Z', -90)],
     }
     rotations = rotation_map.get(cfg["weapon_id"])

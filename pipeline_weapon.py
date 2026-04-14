@@ -50,13 +50,34 @@ def detect_model(mid):
     tex_dir = fbx_tex_dir if fbx_path else mat_dir
     tex_files = os.listdir(tex_dir) if os.path.isdir(tex_dir) else []
 
+    # Detect texture prefix: tex_ or stat_
+    tex_prefix_str = "tex_"
+    if any(f.startswith(f"stat_{prefix}_") for f in tex_files):
+        tex_prefix_str = "stat_"
+
+    # Detect part suffix (e.g. _body in tex_we9543_001_body_AAAT.png)
+    tex_part = ""
+    base_pattern = f"{tex_prefix_str}{prefix}_"
+    for f in tex_files:
+        if f.startswith(base_pattern) and "_AAAT" in f:
+            mid_part = f[len(base_pattern):f.index("_AAAT")]
+            if mid_part:
+                tex_part = f"_{mid_part}"
+            break
+        if f.startswith(base_pattern) and "_AAAX" in f:
+            mid_part = f[len(base_pattern):f.index("_AAAX")]
+            if mid_part:
+                tex_part = f"_{mid_part}"
+            break
+
     # Detect texture variants
-    has_aaat = any(f"tex_{prefix}_AAAT" in f for f in tex_files)
-    has_aaax = any(f"tex_{prefix}_AAAX" in f for f in tex_files)
-    has_mroe = any(f"tex_{prefix}_MROE" in f for f in tex_files)
-    has_mrox = any(f"tex_{prefix}_MROX" in f for f in tex_files)
-    has_morx = any(f"tex_{prefix}_MORX" in f for f in tex_files)
-    has_more = any(f"tex_{prefix}_MORE" in f for f in tex_files)
+    full_prefix = f"{tex_prefix_str}{prefix}{tex_part}"
+    has_aaat = any(f"{full_prefix}_AAAT" in f for f in tex_files)
+    has_aaax = any(f"{full_prefix}_AAAX" in f for f in tex_files)
+    has_mroe = any(f"{full_prefix}_MROE" in f for f in tex_files)
+    has_mrox = any(f"{full_prefix}_MROX" in f for f in tex_files)
+    has_morx = any(f"{full_prefix}_MORX" in f for f in tex_files)
+    has_more = any(f"{full_prefix}_MORE" in f for f in tex_files)
 
     base_type = "AAAT" if has_aaat else "AAAX"
     mr_type = "MROE" if has_mroe else ("MROX" if has_mrox else ("MORX" if has_morx else "MORE"))
@@ -64,6 +85,8 @@ def detect_model(mid):
     return {
         "mid": mid,
         "prefix": prefix,
+        "tex_prefix": tex_prefix_str,  # "tex_" or "stat_"
+        "tex_part": tex_part,          # "" or "_body" etc.
         "model_dir": model_dir,
         "tex_dir": tex_dir,
         "weapon_id": WEAPON_ID,
@@ -81,8 +104,10 @@ def detect_model(mid):
 # ============================================================
 def process_textures(cfg):
     prefix, tex_dir = cfg["prefix"], cfg["tex_dir"]
-    nnnx_path = os.path.join(tex_dir, f"tex_{prefix}_NNNX.png")
-    fixed_path = os.path.join(tex_dir, f"tex_{prefix}_NNNX_fixed.png")
+    tp = cfg.get("tex_prefix", "tex_")
+    tpart = cfg.get("tex_part", "")
+    nnnx_path = os.path.join(tex_dir, f"{tp}{prefix}{tpart}_NNNX.png")
+    fixed_path = os.path.join(tex_dir, f"{tp}{prefix}{tpart}_NNNX_fixed.png")
 
     nnnx = np.array(Image.open(nnnx_path))
     r, g, b = nnnx[:, :, 0].copy(), nnnx[:, :, 1].copy(), nnnx[:, :, 2].copy()
@@ -101,9 +126,11 @@ def generate_blender_script(cfg):
     tex_dir = os.path.normpath(cfg["tex_dir"])
     remote_glb = os.path.normpath(os.path.join(OUTPUT_UNC, f"{prefix}.glb"))
 
-    base_tex = f"tex_{prefix}_{cfg['base_type']}.png"
-    mr_tex = f"tex_{prefix}_{cfg['mr_type']}.png"
-    normal_tex = f"tex_{prefix}_NNNX_fixed.png"
+    tp = cfg.get("tex_prefix", "tex_")
+    tpart = cfg.get("tex_part", "")
+    base_tex = f"{tp}{prefix}{tpart}_{cfg['base_type']}.png"
+    mr_tex = f"{tp}{prefix}{tpart}_{cfg['mr_type']}.png"
+    normal_tex = f"{tp}{prefix}{tpart}_NNNX_fixed.png"
 
     # Import command
     if cfg["import"] == "FBX":
@@ -150,13 +177,14 @@ bsdf.inputs["Emission Strength"].default_value = 0.0
         "051": [('X', -90), ('Z', -90)],
         "052": [('X', 90), ('Z', 90)],
         "056": [('X', -90), ('Z', -90)],
-        "057": [('X', -90), ('Z', -90)],
+        "057": [('X', -90), ('Z', -90), ('Z', 90)],
         "060": [('X', -90), ('Z', -90)],
         "509": [('X', -90), ('Z', -90)],
         "902": [('X', -90), ('Z', -90)],
         "908": [('X', -90), ('Z', -90)],
     }
-    rotations = rotation_map.get(cfg["weapon_id"])
+    default_rotation = [('X', -90), ('Z', -90)]
+    rotations = rotation_map.get(cfg["weapon_id"], default_rotation)
     if rotations:
         rot_lines = []
         for i, (axis, deg) in enumerate(rotations):

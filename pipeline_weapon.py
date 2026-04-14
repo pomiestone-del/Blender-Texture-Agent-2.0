@@ -55,10 +55,12 @@ def detect_model(mid):
     tex_dir = fbx_tex_dir if fbx_path else mat_dir
     tex_files = os.listdir(tex_dir) if os.path.isdir(tex_dir) else []
 
-    # Detect texture prefix: tex_ or stat_
+    # Detect texture prefix: tex_, stat_, or tex_mat_
     tex_prefix_str = "tex_"
     if any(f.startswith(f"stat_{prefix}_") for f in tex_files):
         tex_prefix_str = "stat_"
+    elif any(f.startswith(f"tex_mat_{prefix}_") for f in tex_files):
+        tex_prefix_str = "tex_mat_"
 
     # Detect all part suffixes (e.g. _body, _acc in tex_mo001_003_body_AAAT.png)
     base_pattern = f"{tex_prefix_str}{prefix}_"

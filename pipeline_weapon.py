@@ -4,7 +4,6 @@ Handles: OBJ/FBX import, AAAX/AAAT, MROX/MROE, NNNX normal swizzle
 Usage: python pipeline_weapon.py
 """
 import os
-import shutil
 import subprocess
 import tempfile
 import numpy as np
@@ -94,12 +93,12 @@ def process_textures(cfg):
 # ============================================================
 # Step 2: GLB export
 # ============================================================
-def generate_blender_script(cfg, glb_path=None):
+def generate_blender_script(cfg):
     """Generate a Blender Python script for GLB export."""
     mid = cfg["mid"]
     prefix = cfg["prefix"]
     tex_dir = os.path.normpath(cfg["tex_dir"])
-    remote_glb = os.path.normpath(glb_path or os.path.join(OUTPUT_UNC, f"{prefix}.glb"))
+    remote_glb = os.path.normpath(os.path.join(OUTPUT_UNC, f"{prefix}.glb"))
 
     base_tex = f"tex_{prefix}_{cfg['base_type']}.png"
     mr_tex = f"tex_{prefix}_{cfg['mr_type']}.png"
@@ -218,77 +217,44 @@ print("GLB exported: {prefix}.glb")
     return script
 
 
-def _kill_blender():
-    """Kill any lingering blender.exe processes."""
-    subprocess.run(
-        ["taskkill", "/F", "/IM", "blender.exe"],
-        capture_output=True, timeout=10,
-    )
-
-
 def export_glb(cfg):
     mid = cfg["mid"]
-    prefix = cfg["prefix"]
-    tmp_dir = tempfile.gettempdir()
-    script_path = os.path.join(tmp_dir, f"_export_{mid}.py")
-    local_glb = os.path.join(tmp_dir, f"{prefix}.glb")
-    remote_glb = os.path.normpath(os.path.join(OUTPUT_UNC, f"{prefix}.glb"))
+    script_path = os.path.join(tempfile.gettempdir(), f"_export_{mid}.py")
 
     with open(script_path, "w", encoding="utf-8") as f:
-        f.write(generate_blender_script(cfg, glb_path=local_glb))
+        f.write(generate_blender_script(cfg))
 
-    try:
-        result = subprocess.run(
-            [BLENDER, "--background", "--python", script_path],
-            capture_output=True, text=True, timeout=120,
-            encoding="utf-8", errors="replace"
-        )
-    except subprocess.TimeoutExpired:
-        print(f"[{mid}] GLB export TIMEOUT")
-        _kill_blender()
-        return
-
-    if "GLB exported" in (result.stdout or "") and os.path.isfile(local_glb):
-        shutil.copy2(local_glb, remote_glb)
-        os.remove(local_glb)
+    result = subprocess.run(
+        [BLENDER, "--background", "--python", script_path],
+        capture_output=True, text=True, timeout=120,
+        encoding="utf-8", errors="replace"
+    )
+    if "GLB exported" in (result.stdout or ""):
         print(f"[{mid}] GLB exported")
     else:
         print(f"[{mid}] GLB export FAILED")
         print((result.stderr or result.stdout or "")[-500:])
-
-    if os.path.isfile(script_path):
-        os.remove(script_path)
+    os.remove(script_path)
 
 
 # ============================================================
 # Step 3: Local Blender render
 # ============================================================
 def render_glb(cfg):
-    mid = cfg["mid"]
     prefix = cfg["prefix"]
-    tmp_dir = tempfile.gettempdir()
     glb_path = os.path.normpath(os.path.join(OUTPUT_UNC, f"{prefix}.glb"))
-    local_png = os.path.join(tmp_dir, f"{prefix}.png")
-    remote_png = os.path.normpath(os.path.join(OUTPUT_UNC, f"{prefix}.png"))
+    png_path = os.path.normpath(os.path.join(OUTPUT_UNC, f"{prefix}.png"))
 
-    try:
-        result = subprocess.run(
-            [BLENDER, "--background", "--python", RENDER_SCRIPT,
-             "--", glb_path, local_png, "512"],
-            capture_output=True, text=True, timeout=180,
-            encoding="utf-8", errors="replace"
-        )
-    except subprocess.TimeoutExpired:
-        print(f"[{mid}] Render TIMEOUT")
-        _kill_blender()
-        return
-
-    if os.path.isfile(local_png):
-        shutil.copy2(local_png, remote_png)
-        os.remove(local_png)
-        print(f"[{mid}] Rendered")
+    result = subprocess.run(
+        [BLENDER, "--background", "--python", RENDER_SCRIPT,
+         "--", glb_path, png_path, "512"],
+        capture_output=True, text=True, timeout=180,
+        encoding="utf-8", errors="replace"
+    )
+    if os.path.isfile(png_path):
+        print(f"[{cfg['mid']}] Rendered")
     else:
-        print(f"[{mid}] Render FAILED")
+        print(f"[{cfg['mid']}] Render FAILED")
         print((result.stderr or result.stdout or "")[-500:])
 
 

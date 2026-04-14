@@ -139,11 +139,16 @@ def process_textures(cfg):
     else:
         parts = [cfg.get("tex_part", "")]
 
+    mat_dir = os.path.join(cfg["model_dir"], "materials")
     for tpart in parts:
         nnnx_path = os.path.join(tex_dir, f"{tp}{prefix}{tpart}_NNNX.png")
         fixed_path = os.path.join(tex_dir, f"{tp}{prefix}{tpart}_NNNX_fixed.png")
         if not os.path.isfile(nnnx_path):
-            continue
+            # Fallback to materials dir
+            nnnx_path = os.path.join(mat_dir, f"{tp}{prefix}{tpart}_NNNX.png")
+            fixed_path = os.path.join(mat_dir, f"{tp}{prefix}{tpart}_NNNX_fixed.png")
+            if not os.path.isfile(nnnx_path):
+                continue
         nnnx = np.array(Image.open(nnnx_path))
         r, g, b = nnnx[:, :, 0].copy(), nnnx[:, :, 1].copy(), nnnx[:, :, 2].copy()
         nnnx[:, :, 0], nnnx[:, :, 1], nnnx[:, :, 2] = g, b, r
@@ -167,6 +172,16 @@ def generate_blender_script(cfg):
     base_tex = f"{tp}{prefix}{tpart}_{cfg['base_type']}.png"
     mr_tex = f"{tp}{prefix}{tpart}_{cfg['mr_type']}.png"
     normal_tex = f"{tp}{prefix}{tpart}_NNNX_fixed.png"
+    # Fallback: check materials dir if normal not in tex_dir
+    normal_path = os.path.join(tex_dir, normal_tex)
+    if not os.path.isfile(normal_path):
+        mat_fallback = os.path.normpath(os.path.join(cfg["model_dir"], "materials"))
+        if os.path.isfile(os.path.join(mat_fallback, normal_tex)):
+            tex_dir_normal = mat_fallback
+        else:
+            tex_dir_normal = tex_dir  # will be missing, but handled gracefully
+    else:
+        tex_dir_normal = tex_dir
 
     # Import command
     if cfg["import"] == "FBX":
@@ -208,12 +223,13 @@ def _make_mat(name, base_path, mr_path, normal_path, has_alpha, has_emissive):
     links.new(n_sep.outputs["Green"], bsdf.inputs["Roughness"])
     if has_emissive:
         bsdf.inputs["Emission Strength"].default_value = 0.0
-    n_nnn = nodes.new("ShaderNodeTexImage"); n_nnn.location=(-600,-500)
-    n_nnn.image = bpy.data.images.load(normal_path)
-    n_nnn.image.colorspace_settings.name = "Non-Color"
-    n_nmap = nodes.new("ShaderNodeNormalMap"); n_nmap.location=(-300,-500)
-    links.new(n_nnn.outputs["Color"], n_nmap.inputs["Color"])
-    links.new(n_nmap.outputs["Normal"], bsdf.inputs["Normal"])
+    if normal_path and os.path.isfile(normal_path):
+        n_nnn = nodes.new("ShaderNodeTexImage"); n_nnn.location=(-600,-500)
+        n_nnn.image = bpy.data.images.load(normal_path)
+        n_nnn.image.colorspace_settings.name = "Non-Color"
+        n_nmap = nodes.new("ShaderNodeNormalMap"); n_nmap.location=(-300,-500)
+        links.new(n_nnn.outputs["Color"], n_nmap.inputs["Color"])
+        links.new(n_nmap.outputs["Normal"], bsdf.inputs["Normal"])
     return mat
 """)
         # Create each part's material
@@ -225,6 +241,14 @@ def _make_mat(name, base_path, mr_path, normal_path, has_alpha, has_emissive):
             b_tex = os.path.join(tex_dir, f"{tp}{prefix}{part_suffix}_{p['base_type']}.png")
             m_tex = os.path.join(tex_dir, f"{tp}{prefix}{part_suffix}_{p['mr_type']}.png")
             n_tex = os.path.join(tex_dir, f"{tp}{prefix}{part_suffix}_NNNX_fixed.png")
+            # Fallback to materials dir for NNNX
+            if not os.path.isfile(n_tex):
+                mat_dir = os.path.join(cfg["model_dir"], "materials")
+                n_tex_alt = os.path.join(mat_dir, f"{tp}{prefix}{part_suffix}_NNNX_fixed.png")
+                if os.path.isfile(n_tex_alt):
+                    n_tex = n_tex_alt
+                else:
+                    n_tex = ""  # No normal map for this part
             mat_lines.append(f'mat_{part or "default"} = _make_mat("{mat_name}", r"{b_tex}", r"{m_tex}", r"{n_tex}", {p["has_alpha"]}, {p["has_emissive"]})')
             mat_names[part] = f'mat_{part or "default"}'
 
@@ -302,7 +326,7 @@ links.new(n_sep.outputs["Green"], bsdf.inputs["Roughness"])
 
 n_nnn = nodes.new("ShaderNodeTexImage")
 n_nnn.location = (-600, -500)
-n_nnn.image = bpy.data.images.load(r"{os.path.join(tex_dir, normal_tex)}")
+n_nnn.image = bpy.data.images.load(r"{os.path.join(tex_dir_normal, normal_tex)}")
 n_nnn.image.colorspace_settings.name = "Non-Color"
 n_nmap = nodes.new("ShaderNodeNormalMap")
 n_nmap.location = (-300, -500)
@@ -342,12 +366,12 @@ links.new(n_nmap.outputs["Normal"], bsdf.inputs["Normal"])'''
         "weapon:908": [('X', -90), ('Z', -90)],
         "weapon:932": [('X', -90), ('Z', -90), ('Y', 180), ('Z', 180)],
         "weapon:969": [('X', -90), ('Z', -90), ('Z', -90)],
-        # monster
-        "monster:001": [('X', -90), ('Z', -90), ('Y', -90), ('Z', 90)],
     }
     default_rotation = [('X', -90), ('Z', -90)]
+    default_monster_rotation = [('X', -90), ('Z', -90), ('Y', -90), ('Z', 90)]
     rot_key = f"{ASSET_TYPE}:{cfg['weapon_id']}"
-    rotations = rotation_map.get(rot_key, default_rotation)
+    fallback = default_monster_rotation if ASSET_TYPE == "monster" else default_rotation
+    rotations = rotation_map.get(rot_key, fallback)
     if rotations:
         rot_lines = []
         for i, (axis, deg) in enumerate(rotations):

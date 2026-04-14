@@ -56,9 +56,10 @@ def detect_model(mid):
     has_mroe = any(f"tex_{prefix}_MROE" in f for f in tex_files)
     has_mrox = any(f"tex_{prefix}_MROX" in f for f in tex_files)
     has_morx = any(f"tex_{prefix}_MORX" in f for f in tex_files)
+    has_more = any(f"tex_{prefix}_MORE" in f for f in tex_files)
 
     base_type = "AAAT" if has_aaat else "AAAX"
-    mr_type = "MROE" if has_mroe else ("MROX" if has_mrox else "MORX")
+    mr_type = "MROE" if has_mroe else ("MROX" if has_mrox else ("MORX" if has_morx else "MORE"))
 
     return {
         "mid": mid,
@@ -144,6 +145,16 @@ bsdf.inputs["Emission Strength"].default_value = 0.0
         "009": [('X', -90), ('Z', -90)],
         "012": [('X', -90), ('Z', -90)],
         "020": [('X', -90), ('Z', -90)],
+        "049": [('X', -90), ('Z', -90)],
+        "050": [('X', -90), ('Z', -90)],
+        "051": [('X', -90), ('Z', -90)],
+        "052": [('X', 90), ('Z', 90)],
+        "056": [('X', -90), ('Z', -90)],
+        "057": [('X', -90), ('Z', -90)],
+        "060": [('X', -90), ('Z', -90)],
+        "509": [('X', -90), ('Z', -90)],
+        "902": [('X', -90), ('Z', -90)],
+        "908": [('X', -90), ('Z', -90)],
     }
     rotations = rotation_map.get(cfg["weapon_id"])
     if rotations:

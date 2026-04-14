@@ -132,14 +132,28 @@ mat.use_backface_culling = False
 bsdf.inputs["Emission Strength"].default_value = 0.0
 """
 
-    # Rotation for 001, 004, 005: X -90° then Z -90°
+    # Per-category rotation
     rotate_cmd = ""
-    if cfg["weapon_id"] in ("001", "004", "005"):
-        rotate_cmd = """
+    rotation_map = {
+        "001": [('X', -90), ('Z', -90)],
+        "004": [('X', -90), ('Z', -90)],
+        "005": [('X', -90), ('Z', -90)],
+        "006": [('Z', -90), ('Y', 90)],
+        "007": [('Z', -90)],
+        "008": [('Y', 90), ('X', 90)],
+        "009": [('X', -90), ('Z', -90)],
+        "020": [('X', -90), ('Z', -90)],
+    }
+    rotations = rotation_map.get(cfg["weapon_id"])
+    if rotations:
+        rot_lines = []
+        for i, (axis, deg) in enumerate(rotations):
+            rot_lines.append(f"r{i} = mathutils.Matrix.Rotation(math.radians({deg}), 4, '{axis}')")
+        combined = " @ ".join(f"r{i}" for i in range(len(rotations) - 1, -1, -1))
+        rotate_cmd = f"""
 import math, mathutils
-rot_x = mathutils.Matrix.Rotation(math.radians(-90), 4, 'X')
-rot_z = mathutils.Matrix.Rotation(math.radians(-90), 4, 'Z')
-combined = rot_z @ rot_x
+{chr(10).join(rot_lines)}
+combined = {combined}
 for obj in bpy.data.objects:
     if obj.parent is None:
         obj.matrix_world = combined @ obj.matrix_world
@@ -152,6 +166,14 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 
 # Import
 {import_cmd}
+
+# Apply armature scale (FBX unit conversion leaves scale=0.01)
+for obj in bpy.data.objects:
+    if obj.type == "ARMATURE":
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+        obj.select_set(False)
 
 # Rotation fix
 {rotate_cmd}
